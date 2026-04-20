@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light only">
+  <title>关系风格测试</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page-glow glow-one" aria-hidden="true"></div>
+  <div class="page-glow glow-two" aria-hidden="true"></div>
+  <div class="page-grid" aria-hidden="true"></div>
+
+  <main class="site-shell">
+    <header class="site-header">
+      <button class="eyebrow-button" id="debug-toggle" type="button">成年人关系风格测试</button>
+      <button class="ghost-link" id="clear-data-top" type="button" hidden>清空记录</button>
+    </header>
+
+    <section id="app" class="app-stage" aria-live="polite"></section>
+  </main>
+
+  <noscript>
+    <section class="noscript-card">
+      <h1>需要开启 JavaScript</h1>
+      <p>这个测试站使用原生 JavaScript 驱动题目、进度保存和结果计算。请开启后再打开本页。</p>
+    </section>
+  </noscript>
+
+  <script src="data.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
