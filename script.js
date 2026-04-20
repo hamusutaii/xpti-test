@@ -971,33 +971,40 @@
     });
   }
 
-  function generateResultImage() {
+  async function generateResultImage() {
     if (!state.latestResult) {
       showToast("先完成测试，才能生成结果图。");
       return;
     }
 
-    exportPreviewUrl = buildResultImage(state.latestResult);
-    render();
-    showToast("JPG 结果图已生成。");
-    trackAnalytics("result_image_generated", {
-      mainType: state.latestResult.main.id,
-      mainName: state.latestResult.main.name
-    });
+    showToast("正在生成 JPG 结果图…");
+
+    try {
+      exportPreviewUrl = await buildResultImage(state.latestResult);
+      render();
+      showToast("JPG 结果图已生成。");
+      trackAnalytics("result_image_generated", {
+        mainType: state.latestResult.main.id,
+        mainName: state.latestResult.main.name
+      });
+    } catch (error) {
+      showToast("结果图生成失败，请稍后再试。");
+    }
   }
 
-  function buildResultImage(result) {
+  async function buildResultImage(result) {
     const canvas = document.createElement("canvas");
     canvas.width = 1080;
-    canvas.height = 1440;
+    canvas.height = 1560;
     const ctx = canvas.getContext("2d");
+    const qrImage = await loadShareQrImage();
 
     drawImageBackground(ctx, canvas.width, canvas.height);
     drawImageHeader(ctx, result);
     drawImageSummary(ctx, result);
     drawImageMetrics(ctx, result);
     drawImageMatches(ctx, result.matches);
-    drawImageFooter(ctx);
+    drawImageFooter(ctx, qrImage);
 
     return canvas.toDataURL("image/jpeg", 0.9);
   }
@@ -1110,11 +1117,37 @@
     });
   }
 
-  function drawImageFooter(ctx) {
+  function drawImageFooter(ctx, qrImage) {
+    fillRoundedRect(ctx, 56, 1296, 968, 208, 28, "#faf8f3", "rgba(44,49,46,0.08)");
+
+    ctx.fillStyle = "#58605c";
+    ctx.font = "600 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("扫码继续测试", 92, 1344);
+
+    ctx.fillStyle = "#1f2422";
+    ctx.font = "600 34px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("把这张图发出去，别人扫一下就能直接进入测试。", 92, 1394);
+
+    ctx.fillStyle = "#58605c";
+    ctx.font = "500 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    drawWrappedText(ctx, "测试地址：" + sanitizeShareUrl(quizData.shareConfig.testUrl), 92, 1436, 600, 30, 2);
+
+    fillRoundedRect(ctx, 810, 1332, 154, 154, 22, "#ffffff", "rgba(44,49,46,0.08)");
+
+    if (qrImage) {
+      ctx.drawImage(qrImage, 824, 1346, 126, 126);
+    } else {
+      ctx.strokeStyle = "rgba(44,49,46,0.18)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(838, 1360, 98, 98);
+      ctx.fillStyle = "#7a837f";
+      ctx.font = "500 18px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.fillText("扫码测试", 842, 1494);
+    }
+
     ctx.fillStyle = "#7a837f";
-    ctx.font = "500 20px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("hamusutaii.github.io/xpti-test/", 92, 1344);
-    ctx.fillText("移动端分享图 · JPG", 828, 1344);
+    ctx.font = "500 18px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("移动端分享图 · JPG", 92, 1482);
   }
 
   function fillRoundedRect(ctx, x, y, width, height, radius, fillStyle, strokeStyle) {
@@ -1169,6 +1202,56 @@
   function truncateText(text, maxLength) {
     const source = String(text || "");
     return source.length <= maxLength ? source : source.slice(0, maxLength - 1) + "…";
+  }
+
+  function sanitizeShareUrl(url) {
+    return String(url || "").replace(/^https?:\/\//, "").replace(/\/$/, "");
+  }
+
+  async function loadShareQrImage() {
+    const testUrl = quizData.shareConfig && quizData.shareConfig.testUrl;
+    if (!testUrl) {
+      return null;
+    }
+
+    const qrApi = (quizData.shareConfig && quizData.shareConfig.qrApi) || "https://api.qrserver.com/v1/create-qr-code/";
+    const qrUrl = qrApi + "?size=240x240&margin=0&data=" + encodeURIComponent(testUrl);
+
+    try {
+      const response = await fetch(qrUrl, {
+        method: "GET",
+        mode: "cors",
+        cache: "force-cache"
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const blob = await response.blob();
+      return await loadImageFromBlob(blob);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function loadImageFromBlob(blob) {
+    return new Promise(function (resolve, reject) {
+      const objectUrl = URL.createObjectURL(blob);
+      const image = new Image();
+
+      image.onload = function () {
+        URL.revokeObjectURL(objectUrl);
+        resolve(image);
+      };
+
+      image.onerror = function () {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("QR image failed to load."));
+      };
+
+      image.src = objectUrl;
+    });
   }
 
   function downloadResultImage() {

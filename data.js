@@ -534,7 +534,8 @@
 
   const shareConfig = {
     testUrl: "https://hamusutaii.github.io/xpti-test/",
-    exportFileName: "relationship-profile.jpg"
+    exportFileName: "relationship-profile.jpg",
+    qrApi: "https://api.qrserver.com/v1/create-qr-code/"
   };
 
   const analyticsConfig = {
