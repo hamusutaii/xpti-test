@@ -1,12 +1,12 @@
 (function () {
-  // This controller renders the app, manages localStorage, and recalculates scores from answers.
+  // The app keeps quiz state in memory/localStorage and recalculates all scores from answers.
   const quizData = window.QUIZ_DATA;
   const app = document.getElementById("app");
   const clearDataTopButton = document.getElementById("clear-data-top");
   const debugToggleButton = document.getElementById("debug-toggle");
 
-  const STORAGE_KEY = "relationship-profile-state-v2";
-  const DEBUG_KEY = "relationship-profile-debug-v2";
+  const STORAGE_KEY = "relationship-profile-state-v3";
+  const DEBUG_KEY = "relationship-profile-debug-v3";
   const TOTAL_QUESTIONS = quizData.questions.length;
   const DIMENSION_IDS = quizData.dimensions.map(function (item) {
     return item.id;
@@ -20,7 +20,7 @@
 
   let debugTapCount = 0;
   let debugTapTimer = null;
-  let posterPreviewUrl = "";
+  let exportPreviewUrl = "";
   let state = hydrateState();
 
   const debugMode = {
@@ -44,8 +44,6 @@
     print: function () {
       if (state.latestResult) {
         printDebugScores(state.latestResult);
-      } else {
-        console.info("No result yet.");
       }
     },
     state: function () {
@@ -103,14 +101,14 @@
       case "copy-result":
         copyResultSummary();
         break;
-      case "generate-poster":
-        generatePoster();
+      case "generate-image":
+        generateResultImage();
         break;
-      case "close-poster":
-        closePosterPreview();
+      case "download-image":
+        downloadResultImage();
         break;
-      case "download-poster":
-        downloadPosterPreview();
+      case "close-image":
+        closeResultImage();
         break;
       case "clear-all":
         clearAllData();
@@ -159,7 +157,6 @@
 
     const answers = sanitizeAnswers(parsed.answers);
     const answeredCount = getAnsweredCount(answers);
-    const latestResult = isResultLike(parsed.latestResult) ? parsed.latestResult : null;
 
     return {
       phase: ["home", "quiz", "result"].includes(parsed.phase) ? parsed.phase : "home",
@@ -169,30 +166,21 @@
         TOTAL_QUESTIONS - 1
       ),
       answers: answers,
-      latestResult: answeredCount === TOTAL_QUESTIONS ? calculateResult(answers) : latestResult
+      latestResult: answeredCount === TOTAL_QUESTIONS ? calculateResult(answers) : parsed.latestResult
     };
   }
 
   function sanitizeAnswers(input) {
     const fallback = createEmptyAnswers();
-
     if (!Array.isArray(input)) {
       return fallback;
     }
 
     return fallback.map(function (_, index) {
-      return input[index] === 0 || input[index] === 1 ? input[index] : null;
+      return input[index] === 0 || input[index] === 1 || input[index] === 2 || input[index] === 3
+        ? input[index]
+        : null;
     });
-  }
-
-  function isResultLike(value) {
-    return Boolean(
-      value &&
-      typeof value === "object" &&
-      value.main &&
-      value.dimensionScores &&
-      Array.isArray(value.rankings)
-    );
   }
 
   function createEmptyAnswers() {
@@ -213,7 +201,6 @@
         const strongest = question.options.reduce(function (maxValue, option) {
           return Math.max(maxValue, Math.abs(Number(option.scores[dimensionId] || 0)));
         }, 0);
-
         bounds[dimensionId] += strongest;
       });
     });
@@ -223,7 +210,7 @@
 
   function getAnsweredCount(answers) {
     return answers.filter(function (answer) {
-      return answer === 0 || answer === 1;
+      return answer !== null;
     }).length;
   }
 
@@ -293,20 +280,20 @@
       '<section class="panel">',
       '  <div class="panel-inner">',
       '    <p class="eyebrow">RELATION ASSESSMENT</p>',
-      '    <h1 class="hero-title">不是恋爱脑测试，<br>是你在关系里如何靠近、控场、要确认。</h1>',
-      '    <p class="hero-subtitle">36 道情境题，从推进方式、边界感、安全来源到表达习惯，拆出你在成年人关系里的真实风格。它不会只给你一个可爱标签，而是给你一份更像报告的画像。</p>',
+      '    <h1 class="hero-title">20 个关系情境，<br>看清你靠近、推进、收边界的方式。</h1>',
+      '    <p class="hero-subtitle">不是二选一恋爱测试，也不是粉色小游戏。它更像一份移动端关系侧写，从细小反应里拆出你真实的互动结构。</p>',
       '    <div class="pill-row">',
-      '      <span class="pill">36 道情境题</span>',
-      '      <span class="pill">8 个关系维度</span>',
-      '      <span class="pill">7 类原型</span>',
-      '    </div>',
-      '    <div class="disclaimer">仅供娱乐与自我观察，内容基于成年人自愿关系中的互动偏好，不涉及露骨表达，也不代表任何医学或心理诊断。</div>',
+      '      <span class="pill">20 道题</span>',
+      '      <span class="pill">每题 4 个选项</span>',
+      '      <span class="pill">8 个维度</span>',
+      '      <span class="pill">10 类原型</span>',
+      "    </div>",
       hasPartialProgress
         ? '    <section class="status-card"><h2 class="fact-title">你上次停在一半</h2><p class="muted-text">已经完成 ' +
           answeredCount +
           "/" +
           TOTAL_QUESTIONS +
-          ' 题。进度已经保存在本地，继续即可。</p></section>'
+          ' 题，进度已经保存在本地。</p></section>'
         : "",
       '    <div class="action-stack">',
       '      <button class="primary-button" type="button" data-action="' + startAction + '">' + startLabel + "</button>",
@@ -318,12 +305,8 @@
         : "",
       "    </div>",
       '    <div class="overview-grid">',
-      '      <article class="overview-card"><h2 class="fact-title">这次升级了什么</h2><p class="muted-text">问题不再是“你更主动还是更被动”这种一眼看穿的题，而是从你在具体情境里的默认反应，判断真正的关系结构。</p></article>',
-      '      <article class="overview-card"><h2 class="fact-title">它会看哪些东西</h2><p class="muted-text">不仅看靠近或抽离，还会看你怎么推进、怎么收边界、怎么表达、怎么要安全感，以及你更依赖秩序还是刺激。</p></article>',
-      "    </div>",
-      '    <div class="home-facts">',
-      '      <article class="fact-card"><h2 class="fact-title">结果会给出</h2><p class="muted-text">主型匹配度、次级原型、8 条维度分布，以及“你吸引的人”“你的风险点”“给你的建议”。</p></article>',
-      '      <article class="fact-card"><h2 class="fact-title">更像什么体验</h2><p class="muted-text">它应该像一份安静但很准的关系侧写，而不是粉色恋爱小游戏。发给朋友看，也不会显得过分轻飘。</p></article>',
+      '      <article class="overview-card"><h2 class="fact-title">这次看什么</h2><p class="muted-text">会同时看你的主动度、依附感、边界感、表达方式、控制倾向、确认需求、节奏感和对新鲜度的依赖。</p></article>',
+      '      <article class="overview-card"><h2 class="fact-title">结果会给出</h2><p class="muted-text">主型、副型、维度分布、风险点、建议，以及最匹配的 2 个类型和原因。</p></article>',
       "    </div>",
       "  </div>",
       "</section>"
@@ -344,16 +327,15 @@
       '      <span class="meta-pill">已答 ' + answeredCount + "/" + TOTAL_QUESTIONS + "</span>",
       "    </div>",
       '    <div class="progress-track"><div class="progress-fill" style="width:' + progress + '%"></div></div>',
-      '    <p class="progress-caption">选择更接近你默认反应的一项。你可以返回修改，分数会自动重算。</p>',
+      '    <p class="progress-caption">选更接近你默认反应的一项。没有标准答案，只有更像你的答案。</p>',
       '    <h1 class="question-title">' + question.text + "</h1>",
-      '    <p class="question-guidance">没有标准答案，也没有“更成熟”的选项。真正有用的，是你在细节里会下意识怎么做。</p>',
       '    <div class="option-list">',
       question.options
         .map(function (option, optionIndex) {
           const selected = currentAnswer === optionIndex;
           return [
             '<button class="option-button' + (selected ? " is-selected" : "") + '" type="button" data-option-index="' + optionIndex + '" aria-pressed="' + String(selected) + '">',
-            '  <div class="option-top"><span class="option-mark">' + (optionIndex === 0 ? "A" : "B") + "</span></div>",
+            '  <div class="option-top"><span class="option-mark">' + String.fromCharCode(65 + optionIndex) + "</span></div>",
             '  <p class="option-copy">' + option.text + "</p>",
             "</button>"
           ].join("");
@@ -361,7 +343,7 @@
         .join(""),
       "    </div>",
       '    <div class="question-footer">',
-      '      <span class="support-text">' + (currentAnswer === null ? "先选一个最像你的答案。" : "刷新页面也会保留当前进度。") + "</span>",
+      '      <span class="support-text">' + (currentAnswer === null ? "先选一个最接近你的选项。" : "你可以返回修改，分数会自动更新。") + "</span>",
       '      <button class="inline-link" type="button" data-action="restart">重新开始</button>',
       "    </div>",
       '    <div class="question-actions">',
@@ -403,12 +385,28 @@
       })
       .join("");
 
-    const shareCards = result.shareSamples
-      .map(function (text, index) {
+    const matchCards = result.matches
+      .map(function (item, index) {
+        return [
+          '<article class="secondary-card">',
+          '  <span class="secondary-score">匹配 ' + (index + 1) + " · " + item.score + "%</span>",
+          '  <h3 class="secondary-title">' + item.emoji + " " + item.name + "</h3>",
+          '  <p class="secondary-note">' + item.reason + "</p>",
+          "</article>"
+        ].join("");
+      })
+      .join("");
+
+    const shareCards = [
+      { label: "随意版", text: result.shareTexts.casual },
+      { label: "带点挑衅版", text: result.shareTexts.provocative },
+      { label: "中性版", text: result.shareTexts.neutral }
+    ]
+      .map(function (item) {
         return [
           '<article class="share-card">',
-          '  <h3 class="share-title">分享文案 ' + (index + 1) + "</h3>",
-          '  <p class="share-text">' + text + "</p>",
+          '  <h3 class="share-title">' + item.label + "</h3>",
+          '  <p class="share-text">' + item.text + "</p>",
           "</article>"
         ].join("");
       })
@@ -425,8 +423,8 @@
       '        <p class="result-summary">' + result.main.summary + "</p>",
       "      </div>",
       '      <div class="summary-grid">',
-      '        <article class="summary-card"><span class="summary-label">你的高频信号</span><strong class="summary-value">' + result.signalTags.join(" / ") + "</strong></article>",
-      '        <article class="summary-card"><span class="summary-label">次级原型</span><strong class="summary-value">' + secondary.map(function (item) { return item.name; }).join(" / ") + "</strong></article>",
+      '        <article class="summary-card"><span class="summary-label">高频信号</span><strong class="summary-value">' + result.signalTags.join(" / ") + "</strong></article>",
+      '        <article class="summary-card"><span class="summary-label">副类型</span><strong class="summary-value">' + secondary.map(function (item) { return item.name; }).join(" / ") + "</strong></article>",
       '        <article class="summary-card"><span class="summary-label">结果特征</span><strong class="summary-value">' + result.reportTone + "</strong></article>",
       "      </div>",
       '      <div class="report-tags">' + result.topDimensions.map(function (tag) { return '<span class="report-tag">' + tag + "</span>"; }).join("") + "</div>",
@@ -444,10 +442,14 @@
       '      <div class="secondary-grid">' + secondaryCards + "</div>",
       "    </div>",
       '    <div class="section-block">',
+      '      <h2 class="section-title">最匹配类型</h2>',
+      '      <div class="secondary-grid">' + matchCards + "</div>",
+      "    </div>",
+      '    <div class="section-block">',
       '      <h2 class="section-title">关系侧写</h2>',
       '      <div class="report-grid">',
       '        <article class="detail-card"><h3 class="detail-title">你吸引的人</h3><p class="detail-copy">' + result.main.attracts + "</p></article>",
-      '        <article class="detail-card"><h3 class="detail-title">你的关系风险点</h3><p class="detail-copy">' + result.main.risk + "</p></article>",
+      '        <article class="detail-card"><h3 class="detail-title">你的风险点</h3><p class="detail-copy">' + result.main.risk + "</p></article>",
       "      </div>",
       '      <div class="section-block">',
       '        <article class="detail-card"><h3 class="detail-title">给你的建议</h3><p class="detail-copy">' + result.main.advice + "</p></article>",
@@ -458,38 +460,37 @@
       '      <div class="share-grid">' + shareCards + "</div>",
       "    </div>",
       '    <div class="result-actions">',
-      '      <button class="primary-button" type="button" data-action="generate-poster">生成分享海报</button>',
+      '      <button class="primary-button" type="button" data-action="generate-image">生成 JPG 结果图</button>',
       '      <button class="secondary-button" type="button" data-action="copy-result">复制结果摘要</button>',
       '      <button class="secondary-button" type="button" data-action="restart">重新测一遍</button>',
       '      <button class="tertiary-button" type="button" data-action="go-home">返回首页</button>',
       '      <button class="tertiary-button" type="button" data-action="clear-all">清空记录</button>',
       "    </div>",
-      '    <p class="tiny-note">海报内会自动带上测试二维码。若你还没有部署站点，请先把 <code>data.js</code> 里的 <code>shareConfig.testUrl</code> 换成正式地址。</p>',
       "  </div>",
       "</section>",
-      renderPosterModal()
+      renderImageModal()
     ].join("");
   }
 
-  function renderPosterModal() {
-    if (!posterPreviewUrl) {
+  function renderImageModal() {
+    if (!exportPreviewUrl) {
       return "";
     }
 
     return [
-      '<section class="poster-modal" role="dialog" aria-modal="true" aria-label="分享海报预览">',
-      '  <div class="poster-backdrop" data-action="close-poster"></div>',
+      '<section class="poster-modal" role="dialog" aria-modal="true" aria-label="结果图预览">',
+      '  <div class="poster-backdrop" data-action="close-image"></div>',
       '  <div class="poster-sheet">',
       '    <div class="poster-sheet__header">',
-      '      <div><p class="eyebrow">POSTER PREVIEW</p><p class="poster-note">长按图片或直接下载，即可转发给朋友。</p></div>',
-      '      <button class="inline-link" type="button" data-action="close-poster">关闭</button>',
+      '      <div><p class="eyebrow">JPG PREVIEW</p><p class="poster-note">适合直接转发到微信或保存到手机。</p></div>',
+      '      <button class="inline-link" type="button" data-action="close-image">关闭</button>',
       "    </div>",
       '    <div class="poster-sheet__body">',
-      '      <img class="poster-image" src="' + posterPreviewUrl + '" alt="关系风格评估分享海报">',
+      '      <img class="poster-image" src="' + exportPreviewUrl + '" alt="关系风格 JPG 结果图">',
       "    </div>",
       '    <div class="poster-toolbar">',
-      '      <button class="primary-button" type="button" data-action="download-poster">下载海报</button>',
-      '      <button class="secondary-button" type="button" data-action="close-poster">返回结果页</button>',
+      '      <button class="primary-button" type="button" data-action="download-image">下载 JPG</button>',
+      '      <button class="secondary-button" type="button" data-action="close-image">返回结果页</button>',
       "    </div>",
       "  </div>",
       "</section>"
@@ -501,10 +502,6 @@
     const hasProgress = getAnsweredCount(existingAnswers) > 0;
 
     state.phase = "quiz";
-
-    if (!options.keepResult) {
-      state.latestResult = null;
-    }
 
     if (options.resume && hasProgress) {
       state.answers = existingAnswers;
@@ -557,7 +554,6 @@
     }
 
     state.currentIndex += 1;
-    state.phase = "quiz";
     persistState();
     render();
   }
@@ -569,10 +565,9 @@
 
     if (firstMissing !== -1) {
       state.currentIndex = firstMissing;
-      state.phase = "quiz";
       persistState();
       render();
-      showToast("还有题目没完成，已经帮你跳过去了。");
+      showToast("还有题没做完，已经帮你跳过去了。");
       return;
     }
 
@@ -629,11 +624,6 @@
       });
 
     const main = rankings[0];
-    const secondary = rankings.slice(1, 3);
-    const signalTags = buildSignalTags(dimensionScores);
-    const topDimensions = buildTopDimensionLabels(dimensionScores);
-    const reportTone = buildReportTone(main, dimensionScores);
-    const shareSamples = buildShareSamples(main, secondary, dimensionScores, signalTags);
 
     return {
       createdAt: new Date().toISOString(),
@@ -641,10 +631,11 @@
       dimensionScores: dimensionScores,
       rankings: rankings,
       main: main,
-      signalTags: signalTags,
-      topDimensions: topDimensions,
-      reportTone: reportTone,
-      shareSamples: shareSamples,
+      matches: buildMatches(main.id, dimensionScores),
+      signalTags: buildSignalTags(dimensionScores),
+      topDimensions: buildTopDimensionLabels(dimensionScores),
+      reportTone: buildReportTone(main, dimensionScores),
+      shareTexts: buildShareTexts(main, buildSignalTags(dimensionScores)),
       chaosMeta: chaosMeta
     };
   }
@@ -657,175 +648,209 @@
     return clamp(Math.round(((value + bound) / (2 * bound)) * 100), 0, 100);
   }
 
-  function scoreRegularArchetype(archetype, dimensionScores) {
-    let totalWeight = 0;
+  function scoreRegularArchetype(archetype, scores) {
     let weightedDistance = 0;
+    let totalWeight = 0;
 
     DIMENSION_IDS.forEach(function (dimensionId) {
       const weight = Number(archetype.weights[dimensionId] || 1);
       totalWeight += weight;
-      weightedDistance += Math.abs(dimensionScores[dimensionId] - archetype.profile[dimensionId]) * weight;
+      weightedDistance += Math.abs(scores[dimensionId] - archetype.profile[dimensionId]) * weight;
     });
 
     const averageDistance = weightedDistance / totalWeight;
     const baseScore = 100 - averageDistance * 1.08;
-    const ruleBonus = scoreArchetypeBonus(archetype.id, dimensionScores);
+    const bonus = scoreArchetypeBonus(archetype.id, scores);
 
-    return clamp(Math.round(baseScore + ruleBonus), 20, 97);
+    return clamp(Math.round(baseScore + bonus), 18, 97);
   }
 
   function scoreArchetypeBonus(archetypeId, scores) {
     switch (archetypeId) {
       case "dog":
         return (
-          (scores.attachment > 72 ? 8 : 0) +
-          (scores.security > 66 ? 8 : 0) +
-          (scores.dominance < 44 ? 6 : 0) +
-          (scores.expression > 54 ? 4 : 0) +
-          (scores.control < 52 ? 3 : 0) -
-          (scores.novelty > 72 ? 4 : 0)
+          (scores.attachment > 70 ? 7 : 0) +
+          (scores.security > 68 ? 7 : 0) +
+          (scores.dominance < 45 ? 5 : 0) -
+          (scores.control > 70 ? 4 : 0)
         );
       case "hunter":
         return (
-          (scores.dominance > 72 ? 8 : 0) +
+          (scores.dominance > 70 ? 8 : 0) +
           (scores.control > 72 ? 8 : 0) +
-          (scores.pace > 66 ? 6 : 0) +
-          (scores.expression > 56 ? 4 : 0) +
-          (scores.security < 46 ? 3 : 0) -
-          (scores.attachment > 76 ? 4 : 0)
+          (scores.pace > 64 ? 5 : 0) -
+          (scores.security > 72 ? 3 : 0)
         );
       case "cat":
         return (
           (scores.attachment < 38 ? 8 : 0) +
-          (scores.security < 40 ? 7 : 0) +
-          (scores.expression < 42 ? 7 : 0) +
-          (scores.control > 54 ? 4 : 0) +
-          (scores.pace < 54 ? 3 : 0) -
-          (scores.boundary > 72 ? 4 : 0)
+          (scores.expression < 40 ? 8 : 0) +
+          (scores.security < 42 ? 6 : 0)
         );
       case "explorer":
         return (
           (scores.novelty > 74 ? 10 : 0) +
           (scores.boundary < 42 ? 6 : 0) +
-          (scores.pace > 60 ? 5 : 0) +
-          (scores.expression > 50 ? 3 : 0) +
-          (scores.control < 60 ? 2 : 0) -
-          (scores.attachment > 78 ? 4 : 0)
+          (scores.pace > 58 ? 4 : 0)
         );
       case "observer":
         return (
-          (scores.attachment < 34 ? 9 : 0) +
-          (scores.expression < 38 ? 9 : 0) +
-          (scores.pace < 42 ? 6 : 0) +
-          (scores.control > 56 ? 4 : 0) +
-          (scores.security < 50 ? 3 : 0) -
-          (scores.novelty > 70 ? 4 : 0)
+          (scores.attachment < 34 ? 8 : 0) +
+          (scores.expression < 36 ? 9 : 0) +
+          (scores.pace < 40 ? 5 : 0)
         );
       case "binding":
         return (
-          (scores.attachment > 76 ? 10 : 0) +
+          (scores.attachment > 78 ? 9 : 0) +
           (scores.boundary > 74 ? 9 : 0) +
-          (scores.security > 68 ? 7 : 0) +
-          (scores.control > 54 ? 3 : 0) +
-          (scores.novelty < 44 ? 4 : 0)
+          (scores.security > 70 ? 7 : 0)
+        );
+      case "reversal":
+        return (
+          (scores.dominance > 58 ? 5 : 0) +
+          (scores.attachment > 64 ? 6 : 0) +
+          (scores.security > 62 ? 5 : 0) +
+          (scores.control > 64 ? 6 : 0)
+        );
+      case "steady":
+        return (
+          (scores.novelty < 34 ? 10 : 0) +
+          (scores.pace < 38 ? 8 : 0) +
+          (scores.boundary > 58 ? 5 : 0)
+        );
+      case "probing":
+        return (
+          (scores.pace < 34 ? 10 : 0) +
+          (scores.security > 66 ? 8 : 0) +
+          (scores.expression < 46 ? 6 : 0)
         );
       default:
         return 0;
     }
   }
 
-  function measureChaos(dimensionScores, regularRankings) {
+  function measureChaos(scores, regularRankings) {
     const values = DIMENSION_IDS.map(function (dimensionId) {
-      return dimensionScores[dimensionId];
+      return scores[dimensionId];
     });
+    const dispersion = standardDeviation(values);
     const highCount = values.filter(function (value) {
       return value >= 70;
     }).length;
     const lowCount = values.filter(function (value) {
       return value <= 30;
     }).length;
-    const dispersion = standardDeviation(values);
-    const contradiction =
-      (
-        Math.abs(dimensionScores.dominance - dimensionScores.expression) +
-        Math.abs(dimensionScores.attachment - dimensionScores.security) +
-        Math.abs(dimensionScores.novelty - dimensionScores.boundary) +
-        Math.abs(dimensionScores.control - dimensionScores.pace)
-      ) / 4;
+    const contradiction = average([
+      Math.abs(scores.dominance - scores.attachment),
+      Math.abs(scores.control - scores.expression),
+      Math.abs(scores.novelty - scores.boundary),
+      Math.abs(scores.security - scores.pace)
+    ]);
     const topRegular = regularRankings[0] ? regularRankings[0].score : 60;
-    const secondRegular = regularRankings[1] ? regularRankings[1].score : topRegular - 8;
-    const gap = topRegular - secondRegular;
+    const secondRegular = regularRankings[1] ? regularRankings[1].score : 54;
 
     return {
-      dispersion: Number(dispersion.toFixed(2)),
-      contradiction: Number(contradiction.toFixed(2)),
+      dispersion: dispersion,
       highCount: highCount,
       lowCount: lowCount,
-      mixedPolarity: Math.min(highCount, lowCount),
-      topRegular: topRegular,
-      gap: gap
+      contradiction: contradiction,
+      gap: topRegular - secondRegular,
+      topRegular: topRegular
     };
   }
 
   function scoreChaosArchetype(meta) {
-    const trigger =
+    const strongConflict =
       meta.dispersion > 18 &&
-      meta.mixedPolarity >= 3 &&
-      meta.contradiction > 22 &&
-      meta.topRegular < 82 &&
-      meta.gap < 7;
+      meta.highCount >= 2 &&
+      meta.lowCount >= 2 &&
+      meta.contradiction > 24 &&
+      meta.gap < 7 &&
+      meta.topRegular < 83;
 
-    if (trigger) {
-      return clamp(
-        Math.round(
-          62 +
-          (meta.dispersion - 18) * 0.9 +
-          meta.mixedPolarity * 3 +
-          (22 - meta.gap)
-        ),
-        60,
-        88
-      );
+    if (strongConflict) {
+      return clamp(Math.round(64 + (meta.dispersion - 18) * 1.2 + (24 - meta.gap)), 60, 88);
     }
 
+    return clamp(Math.round(22 + meta.dispersion * 0.45 + Math.min(meta.highCount, meta.lowCount) * 2), 14, 54);
+  }
+
+  function buildMatches(mainId, userScores) {
+    return quizData.archetypes
+      .filter(function (type) {
+        return type.id !== mainId && type.id !== "chaos";
+      })
+      .map(function (type) {
+        const score = scoreMatch(type.profile, userScores);
+        return {
+          id: type.id,
+          name: type.name,
+          emoji: type.emoji,
+          score: score,
+          reason: buildMatchReason(type, userScores, score)
+        };
+      })
+      .sort(function (left, right) {
+        return right.score - left.score;
+      })
+      .slice(0, 2);
+  }
+
+  function scoreMatch(profile, userScores) {
+    const dominanceFit = 100 - Math.abs(userScores.dominance + profile.dominance - 100);
+    const attachmentFit = 100 - Math.abs(userScores.attachment - profile.attachment);
+    const boundaryFit = 100 - Math.abs(userScores.boundary - profile.boundary);
+    const paceFit = 100 - Math.abs(userScores.pace - profile.pace);
+
     return clamp(
-      Math.round(
-        28 +
-        meta.dispersion * 0.32 +
-        meta.mixedPolarity * 2 -
-        Math.max(0, meta.topRegular - 72) * 0.6
-      ),
-      18,
-      58
+      Math.round(dominanceFit * 0.32 + attachmentFit * 0.28 + boundaryFit * 0.2 + paceFit * 0.2),
+      38,
+      96
     );
   }
 
-  function buildSignalTags(dimensionScores) {
-    const ranked = quizData.dimensions
+  function buildMatchReason(type, userScores, score) {
+    const dominanceFit = 100 - Math.abs(userScores.dominance + type.profile.dominance - 100);
+    const attachmentFit = 100 - Math.abs(userScores.attachment - type.profile.attachment);
+    const boundaryFit = 100 - Math.abs(userScores.boundary - type.profile.boundary);
+    const paceFit = 100 - Math.abs(userScores.pace - type.profile.pace);
+
+    const factors = [
+      { label: "一方推进、一方接球，节奏不容易互相抢", value: dominanceFit },
+      { label: "情感浓度接得上，不容易一热一冷", value: attachmentFit },
+      { label: "对边界的理解接近，少很多误伤", value: boundaryFit },
+      { label: "升温速度比较合拍，不必互相催或者互相等", value: paceFit }
+    ].sort(function (left, right) {
+      return right.value - left.value;
+    });
+
+    return "匹配度 " + score + "%。主要因为" + factors[0].label + "；同时" + factors[1].label + "。";
+  }
+
+  function buildSignalTags(scores) {
+    return quizData.dimensions
       .map(function (dimension) {
-        const score = dimensionScores[dimension.id];
-        const direction = score >= 50 ? dimension.rightLabel : dimension.leftLabel;
+        const score = scores[dimension.id];
         return {
-          text: dimension.label + "偏" + direction,
+          text: dimension.label + "偏" + (score >= 50 ? dimension.rightLabel : dimension.leftLabel),
           distance: Math.abs(score - 50)
         };
       })
       .sort(function (left, right) {
         return right.distance - left.distance;
+      })
+      .slice(0, 3)
+      .map(function (item) {
+        return item.text;
       });
-
-    return ranked.slice(0, 3).map(function (item) {
-      return item.text;
-    });
   }
 
-  function buildTopDimensionLabels(dimensionScores) {
+  function buildTopDimensionLabels(scores) {
     return quizData.dimensions
       .map(function (dimension) {
-        const score = dimensionScores[dimension.id];
-        const direction = score >= 50 ? dimension.rightLabel : dimension.leftLabel;
+        const score = scores[dimension.id];
         return {
-          label: dimension.label + "：" + direction,
+          text: dimension.label + "：" + (score >= 50 ? dimension.rightLabel : dimension.leftLabel),
           distance: Math.abs(score - 50)
         };
       })
@@ -834,36 +859,32 @@
       })
       .slice(0, 4)
       .map(function (item) {
-        return item.label;
+        return item.text;
       });
   }
 
-  function buildReportTone(main, dimensionScores) {
-    if (main.id === "chaos") {
-      return "你的内在需求切换速度比多数人更快。";
-    }
-
-    const fast = dimensionScores.pace > 60 ? "推进偏快" : "推进偏稳";
-    const expression = dimensionScores.expression > 50 ? "表达更直" : "表达更收";
-    return fast + "，" + expression + "，整体风格较为成形。";
+  function buildReportTone(main, scores) {
+    const paceText = scores.pace > 58 ? "推进偏快" : "推进偏稳";
+    const expressText = scores.expression > 50 ? "表达较直" : "表达较收";
+    return main.id === "chaos"
+      ? "内在信号切换明显，关系表现很看场景。"
+      : paceText + "，" + expressText + "，风格辨识度较高。";
   }
 
-  function buildShareSamples(main, secondary, dimensionScores, signalTags) {
-    const replacements = {
-      "{type}": main.name,
-      "{match}": String(main.score),
-      "{summary}": main.summary,
-      "{secondary}": secondary.map(function (item) {
-        return item.name + " " + item.score + "%";
-      }).join(" / "),
-      "{dimensionHighlight}": signalTags[0] || buildSignalTags(dimensionScores)[0]
+  function buildShareTexts(main, signalTags) {
+    return {
+      casual: quizData.shareTemplates.casual
+        .replace("{type}", main.name)
+        .replace("{match}", String(main.score))
+        .replace("{summary}", main.summary),
+      provocative: quizData.shareTemplates.provocative
+        .replace("{type}", main.name)
+        .replace("{summary}", main.summary),
+      neutral: quizData.shareTemplates.neutral
+        .replace("{type}", main.name)
+        .replace("{match}", String(main.score))
+        .replace("{signal}", signalTags[0])
     };
-
-    return quizData.shareTemplates.map(function (template) {
-      return Object.keys(replacements).reduce(function (text, token) {
-        return text.split(token).join(replacements[token]);
-      }, template);
-    });
   }
 
   function copyResultSummary() {
@@ -873,30 +894,16 @@
     }
 
     const result = state.latestResult;
-    const secondary = result.rankings
-      .slice(1, 3)
-      .map(function (item) {
-        return item.name + " " + item.score + "%";
-      })
-      .join(" / ");
-
-    const dimensionSummary = quizData.dimensions
-      .map(function (dimension) {
-        return dimension.label + " " + result.dimensionScores[dimension.id] + "%";
-      })
-      .join("｜");
-
     const text = [
-      "【我的关系风格评估】",
+      "【关系风格评估结果】",
       result.main.name + " " + result.main.score + "%｜" + result.main.nickname,
       result.main.summary,
+      "副类型：" + result.rankings.slice(1, 3).map(function (item) { return item.name + " " + item.score + "%"; }).join(" / "),
+      "匹配类型：" + result.matches.map(function (item) { return item.name + " " + item.score + "%"; }).join(" / "),
       "高频信号：" + result.signalTags.join(" / "),
-      "次级原型：" + secondary,
-      "八维分布：" + dimensionSummary,
       "你吸引的人：" + result.main.attracts,
-      "你的风险点：" + result.main.risk,
-      "给你的建议：" + result.main.advice,
-      "可分享文案：" + result.shareSamples[0]
+      "风险点：" + result.main.risk,
+      "建议：" + result.main.advice
     ].join("\n");
 
     copyText(text).then(function (success) {
@@ -904,263 +911,149 @@
     });
   }
 
-  function generatePoster() {
+  function generateResultImage() {
     if (!state.latestResult) {
-      showToast("先完成测试，才能生成海报。");
+      showToast("先完成测试，才能生成结果图。");
       return;
     }
 
-    const shareUrl = getShareTestUrl();
-    if (!shareUrl) {
-      showToast("缺少可分享的测试地址。");
-      return;
-    }
-
-    if (window.location.protocol === "file:" && isPlaceholderShareUrl(shareUrl)) {
-      showToast("请先把 data.js 里的 shareConfig.testUrl 改成你的线上地址。");
-    } else {
-      showToast("正在生成海报…");
-    }
-
-    fetchQrDataUrl(shareUrl)
-      .then(function (qrDataUrl) {
-        return loadImage(qrDataUrl).then(function (qrImage) {
-          const posterUrl = buildPosterDataUrl(state.latestResult, qrImage, shareUrl);
-          posterPreviewUrl = posterUrl;
-          render();
-          showToast("海报已生成。");
-        });
-      })
-      .catch(function (error) {
-        console.error(error);
-        showToast("海报生成失败，请稍后再试。");
-      });
+    exportPreviewUrl = buildResultImage(state.latestResult);
+    render();
+    showToast("JPG 结果图已生成。");
   }
 
-  function getShareTestUrl() {
-    if (/^https?:$/i.test(window.location.protocol)) {
-      return window.location.origin + window.location.pathname;
-    }
-
-    if (quizData.shareConfig && quizData.shareConfig.testUrl) {
-      return quizData.shareConfig.testUrl;
-    }
-
-    return "";
-  }
-
-  function isPlaceholderShareUrl(url) {
-    return /your-domain\.com/i.test(url);
-  }
-
-  function fetchQrDataUrl(shareUrl) {
-    const qrApi = (quizData.shareConfig && quizData.shareConfig.qrApi) || "https://quickchart.io/qr";
-    const qrUrl =
-      qrApi +
-      "?size=260&margin=1&ecLevel=M&format=png&text=" +
-      encodeURIComponent(shareUrl);
-
-    return fetch(qrUrl, {
-      mode: "cors",
-      cache: "no-store"
-    })
-      .then(function (response) {
-        if (!response.ok) {
-          throw new Error("QR request failed.");
-        }
-
-        return response.blob();
-      })
-      .then(blobToDataUrl);
-  }
-
-  function blobToDataUrl(blob) {
-    return new Promise(function (resolve, reject) {
-      const reader = new FileReader();
-      reader.onload = function () {
-        resolve(reader.result);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  function loadImage(source) {
-    return new Promise(function (resolve, reject) {
-      const image = new Image();
-      image.onload = function () {
-        resolve(image);
-      };
-      image.onerror = reject;
-      image.src = source;
-    });
-  }
-
-  function buildPosterDataUrl(result, qrImage, shareUrl) {
+  function buildResultImage(result) {
     const canvas = document.createElement("canvas");
     canvas.width = 1080;
-    canvas.height = 1760;
-
+    canvas.height = 1440;
     const ctx = canvas.getContext("2d");
 
-    drawPosterBackground(ctx, canvas.width, canvas.height);
-    drawPosterHeader(ctx, result);
-    drawPosterSummary(ctx, result);
-    drawPosterDimensions(ctx, result.dimensionScores);
-    drawPosterSecondary(ctx, result.rankings.slice(1, 3));
-    drawPosterInsights(ctx, result);
-    drawPosterQrCard(ctx, qrImage, shareUrl);
+    drawImageBackground(ctx, canvas.width, canvas.height);
+    drawImageHeader(ctx, result);
+    drawImageSummary(ctx, result);
+    drawImageMetrics(ctx, result);
+    drawImageMatches(ctx, result.matches);
+    drawImageFooter(ctx);
 
-    return canvas.toDataURL("image/png");
+    return canvas.toDataURL("image/jpeg", 0.9);
   }
 
-  function drawPosterBackground(ctx, width, height) {
+  function drawImageBackground(ctx, width, height) {
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, "#f7f5ef");
-    gradient.addColorStop(1, "#efebe2");
+    gradient.addColorStop(1, "#ece8df");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
-    ctx.fillStyle = "rgba(104,114,104,0.05)";
+    ctx.fillStyle = "rgba(104,114,104,0.06)";
     ctx.beginPath();
-    ctx.arc(120, 140, 120, 0, Math.PI * 2);
+    ctx.arc(140, 130, 140, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "rgba(138,119,100,0.07)";
+    ctx.fillStyle = "rgba(138,119,100,0.08)";
     ctx.beginPath();
-    ctx.arc(920, 260, 160, 0, Math.PI * 2);
+    ctx.arc(930, 250, 170, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  function drawPosterHeader(ctx, result) {
-    fillRoundedRect(ctx, 60, 56, 960, 286, 34, "#fbf9f4", "rgba(44,49,46,0.08)");
-
+  function drawImageHeader(ctx, result) {
+    fillRoundedRect(ctx, 56, 52, 968, 250, 32, "#fbf9f4", "rgba(44,49,46,0.08)");
     ctx.fillStyle = "#7a837f";
-    ctx.font = "600 26px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("RELATION PROFILE", 102, 116);
+    ctx.font = "600 24px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("RELATION ASSESSMENT", 96, 104);
 
     ctx.fillStyle = "#1f2422";
     ctx.font = "700 72px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText(result.main.emoji + " " + result.main.name, 100, 206);
+    ctx.fillText(result.main.emoji + " " + result.main.name, 96, 190);
 
     ctx.fillStyle = "#58605c";
-    ctx.font = "500 34px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText(result.main.nickname + " · 匹配度 " + result.main.score + "%", 102, 258);
+    ctx.font = "500 32px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText(result.main.nickname + " · " + result.main.score + "%", 98, 238);
 
     ctx.fillStyle = "#2a302d";
-    ctx.font = "500 31px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    drawWrappedText(ctx, result.main.summary, 102, 306, 860, 45, 2);
-  }
-
-  function drawPosterSummary(ctx, result) {
-    fillRoundedRect(ctx, 60, 372, 960, 252, 28, "#faf8f3", "rgba(44,49,46,0.08)");
-
-    ctx.fillStyle = "#58605c";
-    ctx.font = "600 24px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("核心侧写", 96, 422);
-
-    ctx.fillStyle = "#1f2422";
     ctx.font = "500 28px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    drawWrappedText(ctx, truncateText(result.main.interpretation, 116), 96, 470, 888, 42, 4);
+    drawWrappedText(ctx, result.main.summary, 96, 282, 870, 40, 2);
   }
 
-  function drawPosterDimensions(ctx, dimensionScores) {
-    fillRoundedRect(ctx, 60, 652, 960, 418, 28, "#faf8f3", "rgba(44,49,46,0.08)");
-
+  function drawImageSummary(ctx, result) {
+    fillRoundedRect(ctx, 56, 328, 968, 248, 28, "#faf8f3", "rgba(44,49,46,0.08)");
     ctx.fillStyle = "#58605c";
-    ctx.font = "600 24px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("八维分布", 96, 700);
+    ctx.font = "600 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("副类型", 92, 374);
 
-    quizData.dimensions.forEach(function (dimension, index) {
-      const column = index % 2;
-      const row = Math.floor(index / 2);
-      const x = 96 + column * 446;
-      const y = 736 + row * 84;
-      drawPosterMeter(ctx, x, y, 360, dimension, dimensionScores[dimension.id]);
-    });
-  }
-
-  function drawPosterMeter(ctx, x, y, width, dimension, value) {
     ctx.fillStyle = "#1f2422";
-    ctx.font = "600 24px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText(dimension.label, x, y);
+    ctx.font = "600 26px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText(
+      result.rankings.slice(1, 3).map(function (item) { return item.emoji + " " + item.name + " " + item.score + "%"; }).join(" / "),
+      92,
+      418
+    );
 
     ctx.fillStyle = "#58605c";
-    ctx.font = "500 20px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText(value + "%", x + width - 10, y);
+    ctx.font = "600 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("简化维度", 92, 470);
 
-    fillRoundedRect(ctx, x, y + 18, width, 10, 999, "rgba(31,36,34,0.08)");
-    fillRoundedRect(ctx, x, y + 18, Math.round((width * value) / 100), 10, 999, "#6b756e");
-
-    ctx.fillStyle = "#7a837f";
-    ctx.font = "500 17px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText(dimension.leftLabel, x, y + 52);
-    ctx.textAlign = "right";
-    ctx.fillText(dimension.rightLabel, x + width, y + 52);
-    ctx.textAlign = "left";
+    ctx.fillStyle = "#1f2422";
+    ctx.font = "500 24px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    drawWrappedText(ctx, result.topDimensions.join(" / "), 92, 510, 860, 34, 2);
   }
 
-  function drawPosterSecondary(ctx, secondary) {
-    fillRoundedRect(ctx, 60, 1102, 960, 194, 28, "#faf8f3", "rgba(44,49,46,0.08)");
+  function drawImageMetrics(ctx, result) {
+    fillRoundedRect(ctx, 56, 604, 968, 364, 28, "#faf8f3", "rgba(44,49,46,0.08)");
+    ctx.fillStyle = "#58605c";
+    ctx.font = "600 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("高频信号", 92, 648);
+
+    result.signalTags.forEach(function (tag, index) {
+      fillRoundedRect(ctx, 92, 674 + index * 64, 420, 42, 18, "#f2eee7", "rgba(44,49,46,0.06)");
+      ctx.fillStyle = "#1f2422";
+      ctx.font = "500 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+      ctx.fillText(tag, 108, 702 + index * 64);
+    });
 
     ctx.fillStyle = "#58605c";
-    ctx.font = "600 24px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("次级原型", 96, 1150);
+    ctx.font = "600 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("结果特征", 560, 648);
 
-    secondary.forEach(function (item, index) {
-      const x = 96 + index * 444;
-      fillRoundedRect(ctx, x, 1176, 404, 84, 18, "#f4f1ea", "rgba(44,49,46,0.06)");
+    ctx.fillStyle = "#1f2422";
+    ctx.font = "500 24px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    drawWrappedText(ctx, result.reportTone, 560, 690, 392, 34, 2);
+
+    ctx.fillStyle = "#58605c";
+    ctx.font = "600 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("一句建议", 560, 790);
+
+    ctx.fillStyle = "#1f2422";
+    ctx.font = "500 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    drawWrappedText(ctx, truncateText(result.main.advice, 54), 560, 828, 392, 32, 3);
+  }
+
+  function drawImageMatches(ctx, matches) {
+    fillRoundedRect(ctx, 56, 996, 968, 268, 28, "#faf8f3", "rgba(44,49,46,0.08)");
+    ctx.fillStyle = "#58605c";
+    ctx.font = "600 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+    ctx.fillText("最匹配类型", 92, 1042);
+
+    matches.forEach(function (item, index) {
+      const x = 92 + index * 450;
+      fillRoundedRect(ctx, x, 1070, 398, 150, 20, "#f2eee7", "rgba(44,49,46,0.06)");
       ctx.fillStyle = "#1f2422";
       ctx.font = "600 28px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-      ctx.fillText(item.emoji + " " + item.name, x + 18, 1226);
+      ctx.fillText(item.emoji + " " + item.name + " · " + item.score + "%", x + 18, 1116);
       ctx.fillStyle = "#58605c";
-      ctx.font = "500 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-      ctx.fillText(item.nickname + " · " + item.score + "%", x + 18, 1254);
+      ctx.font = "500 20px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
+      drawWrappedText(ctx, truncateText(item.reason, 54), x + 18, 1150, 362, 28, 3);
     });
   }
 
-  function drawPosterInsights(ctx, result) {
-    fillRoundedRect(ctx, 60, 1326, 960, 252, 28, "#faf8f3", "rgba(44,49,46,0.08)");
-
-    ctx.fillStyle = "#58605c";
-    ctx.font = "600 24px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText("关系提示", 96, 1374);
-
-    drawPosterInsightBlock(ctx, 96, 1410, 278, "你吸引的人", truncateText(result.main.attracts, 38));
-    drawPosterInsightBlock(ctx, 402, 1410, 278, "你的风险点", truncateText(result.main.risk, 38));
-    drawPosterInsightBlock(ctx, 708, 1410, 278, "给你的建议", truncateText(result.main.advice, 38));
-  }
-
-  function drawPosterInsightBlock(ctx, x, y, width, title, content) {
-    fillRoundedRect(ctx, x, y, width, 126, 18, "#f4f1ea", "rgba(44,49,46,0.06)");
-    ctx.fillStyle = "#1f2422";
-    ctx.font = "600 22px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText(title, x + 16, y + 32);
-    ctx.fillStyle = "#58605c";
-    ctx.font = "500 18px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    drawWrappedText(ctx, content, x + 16, y + 62, width - 32, 28, 3);
-  }
-
-  function drawPosterQrCard(ctx, qrImage, shareUrl) {
-    fillRoundedRect(ctx, 60, 1588, 960, 132, 28, "#1f2422");
-    fillRoundedRect(ctx, 760, 1604, 224, 102, 18, "#f7f5ef");
-    ctx.drawImage(qrImage, 774, 1616, 78, 78);
-
-    ctx.fillStyle = "#f7f5ef";
-    ctx.font = "600 26px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText((quizData.shareConfig && quizData.shareConfig.posterTitle) || "关系风格评估", 96, 1638);
-
-    ctx.fillStyle = "rgba(247,245,239,0.82)";
+  function drawImageFooter(ctx) {
+    ctx.fillStyle = "#7a837f";
     ctx.font = "500 20px -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif";
-    ctx.fillText((quizData.shareConfig && quizData.shareConfig.posterSubtitle) || "扫描二维码，直接进入测试", 96, 1672);
-    drawWrappedText(ctx, shortenUrlText(shareUrl), 866, 1642, 100, 22, 3);
+    ctx.fillText("hamusutaii.github.io/xpti-test/", 92, 1344);
+    ctx.fillText("移动端分享图 · JPG", 828, 1344);
   }
 
   function fillRoundedRect(ctx, x, y, width, height, radius, fillStyle, strokeStyle) {
-    if (width <= 0 || height <= 0) {
-      return;
-    }
-
     ctx.beginPath();
     roundedRectPath(ctx, x, y, width, height, radius);
     if (fillStyle) {
@@ -1185,84 +1078,58 @@
   }
 
   function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
-    const characters = String(text || "").split("");
     const lines = [];
-    let currentLine = "";
+    let current = "";
 
-    characters.forEach(function (character) {
-      const nextLine = currentLine + character;
-      if (ctx.measureText(nextLine).width > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = character;
+    String(text).split("").forEach(function (char) {
+      const next = current + char;
+      if (ctx.measureText(next).width > maxWidth && current) {
+        lines.push(current);
+        current = char;
       } else {
-        currentLine = nextLine;
+        current = next;
       }
     });
 
-    if (currentLine) {
-      lines.push(currentLine);
+    if (current) {
+      lines.push(current);
     }
 
-    const visibleLines = typeof maxLines === "number" ? lines.slice(0, maxLines) : lines;
-
-    visibleLines.forEach(function (line, index) {
-      const isLastLine = index === visibleLines.length - 1;
-      const wasClipped = typeof maxLines === "number" && lines.length > maxLines && isLastLine;
-      ctx.fillText((wasClipped ? line.slice(0, Math.max(line.length - 1, 0)) + "…" : line), x, y + index * lineHeight);
+    const visible = typeof maxLines === "number" ? lines.slice(0, maxLines) : lines;
+    visible.forEach(function (line, index) {
+      const clipped = typeof maxLines === "number" && lines.length > maxLines && index === visible.length - 1;
+      ctx.fillText(clipped ? line.slice(0, Math.max(line.length - 1, 0)) + "…" : line, x, y + index * lineHeight);
     });
-
-    return y + visibleLines.length * lineHeight;
   }
 
   function truncateText(text, maxLength) {
     const source = String(text || "");
-    if (source.length <= maxLength) {
-      return source;
-    }
-
-    return source.slice(0, maxLength - 1) + "…";
+    return source.length <= maxLength ? source : source.slice(0, maxLength - 1) + "…";
   }
 
-  function shortenUrlText(url) {
-    const source = String(url || "");
-    if (source.length <= 34) {
-      return source;
-    }
-
-    return source.slice(0, 31) + "…";
-  }
-
-  function closePosterPreview() {
-    if (!posterPreviewUrl) {
-      return;
-    }
-
-    posterPreviewUrl = "";
-    render();
-  }
-
-  function downloadPosterPreview() {
-    if (!posterPreviewUrl) {
+  function downloadResultImage() {
+    if (!exportPreviewUrl) {
       return;
     }
 
     const link = document.createElement("a");
-    link.href = posterPreviewUrl;
-    link.download = "relationship-profile-poster.png";
+    link.href = exportPreviewUrl;
+    link.download = quizData.shareConfig.exportFileName || "relationship-profile.jpg";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   }
 
+  function closeResultImage() {
+    exportPreviewUrl = "";
+    render();
+  }
+
   function copyText(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       return navigator.clipboard.writeText(text).then(
-        function () {
-          return true;
-        },
-        function () {
-          return fallbackCopy(text);
-        }
+        function () { return true; },
+        function () { return fallbackCopy(text); }
       );
     }
 
@@ -1305,7 +1172,7 @@
       answers: createEmptyAnswers(),
       latestResult: null
     };
-
+    exportPreviewUrl = "";
     localStorage.removeItem(STORAGE_KEY);
     render();
     showToast("记录已清空。");
@@ -1315,16 +1182,10 @@
     console.group("Relationship Profile Debug");
     console.table(result.rawTotals);
     console.table(result.dimensionScores);
-    console.table(
-      result.rankings.map(function (item) {
-        return {
-          archetype: item.name,
-          score: item.score
-        };
-      })
-    );
-    console.log("signalTags", result.signalTags);
-    console.log("chaosMeta", result.chaosMeta);
+    console.table(result.rankings.map(function (item) {
+      return { archetype: item.name, score: item.score };
+    }));
+    console.table(result.matches);
     console.groupEnd();
   }
 
@@ -1369,13 +1230,11 @@
     }
 
     const mean = average(values);
-    const variance = average(
-      values.map(function (value) {
+    return Math.sqrt(
+      average(values.map(function (value) {
         return Math.pow(value - mean, 2);
-      })
+      }))
     );
-
-    return Math.sqrt(variance);
   }
 
   function clamp(value, min, max) {
