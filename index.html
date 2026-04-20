@@ -4,27 +4,28 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="light only">
-  <title>关系风格测试</title>
+  <meta name="description" content="基于 36 道情境题的成年人关系风格测试。">
+  <title>关系风格评估</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="page-glow glow-one" aria-hidden="true"></div>
-  <div class="page-glow glow-two" aria-hidden="true"></div>
-  <div class="page-grid" aria-hidden="true"></div>
+  <div class="page-noise" aria-hidden="true"></div>
+  <div class="page-accent page-accent--one" aria-hidden="true"></div>
+  <div class="page-accent page-accent--two" aria-hidden="true"></div>
 
-  <main class="site-shell">
-    <header class="site-header">
-      <button class="eyebrow-button" id="debug-toggle" type="button">成年人关系风格测试</button>
-      <button class="ghost-link" id="clear-data-top" type="button" hidden>清空记录</button>
+  <main class="shell">
+    <header class="topbar">
+      <button id="debug-toggle" class="brand-button" type="button">RELATION PROFILE</button>
+      <button id="clear-data-top" class="topbar-link" type="button" hidden>清空记录</button>
     </header>
 
-    <section id="app" class="app-stage" aria-live="polite"></section>
+    <section id="app" class="app-root" aria-live="polite"></section>
   </main>
 
   <noscript>
-    <section class="noscript-card">
+    <section class="noscript-panel">
       <h1>需要开启 JavaScript</h1>
-      <p>这个测试站使用原生 JavaScript 驱动题目、进度保存和结果计算。请开启后再打开本页。</p>
+      <p>这个测试依赖原生 JavaScript 完成题目切换、结果计算和本地存储。请开启后重新打开本页。</p>
     </section>
   </noscript>
 
