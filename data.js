@@ -527,9 +527,9 @@
   ];
 
   const shareTemplates = {
-    casual: "我刚做完这个关系风格评估，结果是「{type}」{match}%。一句话挺戳我：{summary}",
-    provocative: "这个测试比“你是主动还是被动”狠多了，直接把我归到「{type}」。最扎心的是：{summary}",
-    neutral: "完成一份关系风格评估，我的结果是「{type}」{match}%。主要特征：{signal}"
+    casual: "刚做完这个关系风格评估，我是「{type}」{match}%。最像我的那句是：{summary}",
+    provocative: "这种题最怕被说中。我测出来是「{type}」，系统给我的一句话是：{summary}",
+    neutral: "完成一份关系风格评估，结果为「{type}」{match}%。当前最明显的关系信号：{signal}"
   };
 
   const shareConfig = {
@@ -537,11 +537,21 @@
     exportFileName: "relationship-profile.jpg"
   };
 
+  const analyticsConfig = {
+    enabled: true,
+    siteId: "xpti-test",
+    transport: "apps-script",
+    collectEndpoint: "https://script.google.com/macros/s/AKfycbzEppvNfcw6n5iQJ0unuMVIDDcao7r68xw0lZ3Ti-0nIaOxRwz3xYYjFcbVKF1_D5cbDA/exec",
+    dashboardUrl: "https://docs.google.com/spreadsheets/d/1jZ0hpiDAsg8gUT-y9PJTF5qep4_nj0nIpe4qYsE43XU/edit?gid=0#gid=0",
+    adminQuery: "admin=1"
+  };
+
   window.QUIZ_DATA = {
     dimensions,
     archetypes,
     questions,
     shareTemplates,
-    shareConfig
+    shareConfig,
+    analyticsConfig
   };
 })();

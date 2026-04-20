@@ -4,9 +4,12 @@
   const app = document.getElementById("app");
   const clearDataTopButton = document.getElementById("clear-data-top");
   const debugToggleButton = document.getElementById("debug-toggle");
+  const statsLink = document.getElementById("stats-link");
 
   const STORAGE_KEY = "relationship-profile-state-v3";
   const DEBUG_KEY = "relationship-profile-debug-v3";
+  const ANALYTICS_QUEUE_KEY = "relationship-profile-analytics-queue-v1";
+  const analyticsConfig = quizData.analyticsConfig || {};
   const TOTAL_QUESTIONS = quizData.questions.length;
   const DIMENSION_IDS = quizData.dimensions.map(function (item) {
     return item.id;
@@ -21,6 +24,11 @@
   let debugTapCount = 0;
   let debugTapTimer = null;
   let exportPreviewUrl = "";
+  let analyticsFlushTimer = null;
+  let lastTrackedViewKey = "";
+  const analyticsQueue = hydrateAnalyticsQueue();
+  const sessionId = getOrCreateSessionId();
+  const analyticsFlags = hydrateAnalyticsFlags();
   let state = hydrateState();
 
   const debugMode = {
@@ -53,11 +61,21 @@
 
   bindEvents();
   render();
+  initAnalytics();
 
   function bindEvents() {
     document.addEventListener("click", handleDocumentClick);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("online", flushAnalyticsQueue);
     debugToggleButton.addEventListener("click", handleDebugToggleTap);
     clearDataTopButton.addEventListener("click", clearAllData);
+    if (statsLink) {
+      statsLink.addEventListener("click", function () {
+        trackAnalytics("dashboard_opened", {
+          hasDashboard: Boolean(analyticsConfig.dashboardUrl)
+        }, { immediate: true });
+      });
+    }
   }
 
   function handleDocumentClick(event) {
@@ -243,6 +261,7 @@
     }
 
     scrollToTop();
+    maybeTrackPhaseView();
   }
 
   function normalizePhase() {
@@ -259,6 +278,13 @@
 
   function updateTopAction() {
     clearDataTopButton.hidden = !(getAnsweredCount(state.answers) > 0 || state.latestResult);
+    if (statsLink) {
+      const showDashboard = shouldExposeDashboard();
+      statsLink.hidden = !showDashboard;
+      if (showDashboard) {
+        statsLink.href = analyticsConfig.dashboardUrl;
+      }
+    }
   }
 
   function updateDocumentTitle() {
@@ -275,13 +301,14 @@
     const hasPartialProgress = answeredCount > 0 && answeredCount < TOTAL_QUESTIONS;
     const startAction = hasPartialProgress ? "resume" : "start";
     const startLabel = hasPartialProgress ? "继续答题" : state.latestResult ? "重新测一遍" : "开始评估";
+    const showDashboard = shouldExposeDashboard();
 
     return [
       '<section class="panel">',
       '  <div class="panel-inner">',
       '    <p class="eyebrow">RELATION ASSESSMENT</p>',
-      '    <h1 class="hero-title">20 个关系情境，<br>看清你靠近、推进、收边界的方式。</h1>',
-      '    <p class="hero-subtitle">不是二选一恋爱测试，也不是粉色小游戏。它更像一份移动端关系侧写，从细小反应里拆出你真实的互动结构。</p>',
+      '    <h1 class="hero-title">20 个关系场景，<br>拆出你靠近、推进和留白的真实习惯。</h1>',
+      '    <p class="hero-subtitle">这不是一眼能看穿答案的测试，更像一份适合放到手机里慢慢读完的关系侧写。它会从你处理边界、节奏、确认感和表达方式的细节里，看出你真正的相处结构。</p>',
       '    <div class="pill-row">',
       '      <span class="pill">20 道题</span>',
       '      <span class="pill">每题 4 个选项</span>',
@@ -305,8 +332,11 @@
         : "",
       "    </div>",
       '    <div class="overview-grid">',
-      '      <article class="overview-card"><h2 class="fact-title">这次看什么</h2><p class="muted-text">会同时看你的主动度、依附感、边界感、表达方式、控制倾向、确认需求、节奏感和对新鲜度的依赖。</p></article>',
-      '      <article class="overview-card"><h2 class="fact-title">结果会给出</h2><p class="muted-text">主型、副型、维度分布、风险点、建议，以及最匹配的 2 个类型和原因。</p></article>',
+      '      <article class="overview-card"><h2 class="fact-title">它会看什么</h2><p class="muted-text">不是只看你主不主动，而是同时看你的推进倾向、依附浓度、边界收口、表达方式、控制感、确认需求、升温速度和新鲜偏好。</p></article>',
+      '      <article class="overview-card"><h2 class="fact-title">结果会给出什么</h2><p class="muted-text">主型与副型、八维分布、关系盲区、建议，以及最容易跟你合拍的 2 个类型和原因。</p></article>',
+      showDashboard
+        ? '      <article class="overview-card"><h2 class="fact-title">统计后台</h2><p class="muted-text">当前站点已经接入统计入口。带着当前页面的 <code>?admin=1</code> 参数打开时，可以直接从右上角进入后台。</p></article>'
+        : "",
       "    </div>",
       "  </div>",
       "</section>"
@@ -423,30 +453,35 @@
       '        <p class="result-summary">' + result.main.summary + "</p>",
       "      </div>",
       '      <div class="summary-grid">',
-      '        <article class="summary-card"><span class="summary-label">高频信号</span><strong class="summary-value">' + result.signalTags.join(" / ") + "</strong></article>",
-      '        <article class="summary-card"><span class="summary-label">副类型</span><strong class="summary-value">' + secondary.map(function (item) { return item.name; }).join(" / ") + "</strong></article>",
-      '        <article class="summary-card"><span class="summary-label">结果特征</span><strong class="summary-value">' + result.reportTone + "</strong></article>",
+      '        <article class="summary-card summary-card--quote"><span class="summary-label">一句看透你的话</span><strong class="summary-value">' + result.main.summary + "</strong></article>",
+      '        <article class="summary-card"><span class="summary-label">次级倾向</span><strong class="summary-value">' + secondary.map(function (item) { return item.name; }).join(" / ") + "</strong></article>",
+      '        <article class="summary-card"><span class="summary-label">关系底色</span><strong class="summary-value">' + result.reportTone + "</strong></article>",
       "      </div>",
       '      <div class="report-tags">' + result.topDimensions.map(function (tag) { return '<span class="report-tag">' + tag + "</span>"; }).join("") + "</div>",
       "    </div>",
       '    <div class="section-block">',
-      '      <h2 class="section-title">详细解析</h2>',
+      '      <h2 class="section-title">这份结果像什么</h2>',
+      '      <p class="section-intro">不是标签，更像你在关系里最稳定会露出来的那一面。</p>',
       '      <div class="report-card"><p class="muted-text">' + result.main.interpretation + "</p></div>",
       "    </div>",
       '    <div class="section-block">',
-      '      <h2 class="section-title">八维分布</h2>',
+      '      <h2 class="section-title">你的结构</h2>',
+      '      <p class="section-intro">八个维度里，哪几条最像你的默认设置，一眼就能看出来。</p>',
       '      <div class="dimension-grid">' + dimensionCards + "</div>",
       "    </div>",
       '    <div class="section-block">',
-      '      <h2 class="section-title">你的次级原型</h2>',
+      '      <h2 class="section-title">你不只一种样子</h2>',
+      '      <p class="section-intro">主型之外，你身上最容易浮出来的另外两层气质。</p>',
       '      <div class="secondary-grid">' + secondaryCards + "</div>",
       "    </div>",
       '    <div class="section-block">',
-      '      <h2 class="section-title">最匹配类型</h2>',
+      '      <h2 class="section-title">最容易合拍的人</h2>',
+      '      <p class="section-intro">按推进平衡、情感浓度、边界理解和升温速度算出来的前两名。</p>',
       '      <div class="secondary-grid">' + matchCards + "</div>",
       "    </div>",
       '    <div class="section-block">',
       '      <h2 class="section-title">关系侧写</h2>',
+      '      <p class="section-intro">你最容易被谁吸引、最可能在哪一步卡住，以及该怎么把关系做得更顺。</p>',
       '      <div class="report-grid">',
       '        <article class="detail-card"><h3 class="detail-title">你吸引的人</h3><p class="detail-copy">' + result.main.attracts + "</p></article>",
       '        <article class="detail-card"><h3 class="detail-title">你的风险点</h3><p class="detail-copy">' + result.main.risk + "</p></article>",
@@ -456,7 +491,8 @@
       "      </div>",
       "    </div>",
       '    <div class="section-block">',
-      '      <h2 class="section-title">可直接分享的文案</h2>',
+      '      <h2 class="section-title">适合转发出去的话</h2>',
+      '      <p class="section-intro">给朋友、朋友圈或群聊都不尴尬，语气也各不一样。</p>',
       '      <div class="share-grid">' + shareCards + "</div>",
       "    </div>",
       '    <div class="result-actions">',
@@ -500,6 +536,7 @@
   function beginQuiz(options) {
     const existingAnswers = sanitizeAnswers(state.answers);
     const hasProgress = getAnsweredCount(existingAnswers) > 0;
+    const answeredBeforeReset = getAnsweredCount(state.answers);
 
     state.phase = "quiz";
 
@@ -513,6 +550,10 @@
 
     persistState();
     render();
+    trackAnalytics("quiz_started", {
+      resumed: Boolean(options.resume && hasProgress),
+      previousAnsweredCount: answeredBeforeReset
+    }, { immediate: true });
   }
 
   function showLatestResult() {
@@ -524,12 +565,24 @@
     state.phase = "result";
     persistState();
     render();
+    trackAnalytics("result_reopened", {
+      mainType: state.latestResult.main.id,
+      mainName: state.latestResult.main.name
+    });
   }
 
   function selectAnswer(optionIndex) {
+    const previousAnswer = state.answers[state.currentIndex];
     state.answers[state.currentIndex] = optionIndex;
     persistState();
     render();
+    trackAnalytics("question_answered", {
+      questionId: quizData.questions[state.currentIndex].id,
+      questionNumber: state.currentIndex + 1,
+      optionIndex: optionIndex,
+      replaced: previousAnswer !== null && previousAnswer !== optionIndex,
+      answeredCount: getAnsweredCount(state.answers)
+    });
   }
 
   function goToPreviousQuestion() {
@@ -575,6 +628,7 @@
     state.phase = "result";
     persistState();
     render();
+    trackAnalytics("quiz_completed", buildCompletionPayload(state.latestResult), { immediate: true });
   }
 
   function calculateResult(answers) {
@@ -907,6 +961,12 @@
     ].join("\n");
 
     copyText(text).then(function (success) {
+      if (success) {
+        trackAnalytics("result_summary_copied", {
+          mainType: result.main.id,
+          mainName: result.main.name
+        }, { immediate: true });
+      }
       showToast(success ? "结果摘要已复制。" : "复制失败，请手动长按复制。");
     });
   }
@@ -920,6 +980,10 @@
     exportPreviewUrl = buildResultImage(state.latestResult);
     render();
     showToast("JPG 结果图已生成。");
+    trackAnalytics("result_image_generated", {
+      mainType: state.latestResult.main.id,
+      mainName: state.latestResult.main.name
+    });
   }
 
   function buildResultImage(result) {
@@ -1118,11 +1182,255 @@
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    trackAnalytics("result_image_downloaded", {
+      mainType: state.latestResult ? state.latestResult.main.id : ""
+    }, { immediate: true });
   }
 
   function closeResultImage() {
     exportPreviewUrl = "";
     render();
+  }
+
+  function initAnalytics() {
+    if (!analyticsEnabled()) {
+      return;
+    }
+
+    if (!analyticsFlags.sessionStarted) {
+      analyticsFlags.sessionStarted = true;
+      persistAnalyticsFlags();
+      trackAnalytics("session_started", {
+        entryPhase: state.phase,
+        language: navigator.language || "",
+        referrer: document.referrer || "",
+        screen: window.screen ? window.screen.width + "x" + window.screen.height : ""
+      }, { immediate: true });
+    }
+
+    flushAnalyticsQueue();
+  }
+
+  function handleVisibilityChange() {
+    if (document.visibilityState === "hidden") {
+      flushAnalyticsQueue({ useBeacon: true });
+    }
+  }
+
+  function maybeTrackPhaseView() {
+    if (!analyticsEnabled()) {
+      return;
+    }
+
+    const viewKey = state.phase === "quiz"
+      ? "quiz:" + state.currentIndex
+      : state.phase;
+
+    if (viewKey === lastTrackedViewKey) {
+      return;
+    }
+
+    lastTrackedViewKey = viewKey;
+
+    trackAnalytics("page_view", {
+      phase: state.phase,
+      questionNumber: state.phase === "quiz" ? state.currentIndex + 1 : null,
+      answeredCount: getAnsweredCount(state.answers),
+      hasResult: Boolean(state.latestResult)
+    });
+  }
+
+  function analyticsEnabled() {
+    return Boolean(analyticsConfig && analyticsConfig.enabled && analyticsConfig.collectEndpoint);
+  }
+
+  function shouldExposeDashboard() {
+    return Boolean(analyticsConfig && analyticsConfig.dashboardUrl && isAdminView());
+  }
+
+  function isAdminView() {
+    const flag = analyticsConfig.adminQuery || "admin=1";
+    return window.location.search.indexOf(flag) !== -1 || debugMode.enabled;
+  }
+
+  function hydrateAnalyticsQueue() {
+    if (!analyticsEnabled()) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(localStorage.getItem(ANALYTICS_QUEUE_KEY) || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function persistAnalyticsQueue() {
+    if (!analyticsEnabled()) {
+      localStorage.removeItem(ANALYTICS_QUEUE_KEY);
+      return;
+    }
+
+    localStorage.setItem(ANALYTICS_QUEUE_KEY, JSON.stringify(analyticsQueue.slice(-120)));
+  }
+
+  function hydrateAnalyticsFlags() {
+    const store = getSessionStore();
+    try {
+      return JSON.parse(store.getItem(DEBUG_KEY + "-analytics-flags") || "{}");
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function persistAnalyticsFlags() {
+    const store = getSessionStore();
+    store.setItem(DEBUG_KEY + "-analytics-flags", JSON.stringify(analyticsFlags));
+  }
+
+  function getSessionStore() {
+    try {
+      return window.sessionStorage;
+    } catch (error) {
+      return localStorage;
+    }
+  }
+
+  function getOrCreateSessionId() {
+    const store = getSessionStore();
+    const existing = store.getItem(STORAGE_KEY + "-session-id");
+    if (existing) {
+      return existing;
+    }
+
+    const created = "sess_" + Math.random().toString(36).slice(2, 10) + "_" + Date.now().toString(36);
+    store.setItem(STORAGE_KEY + "-session-id", created);
+    return created;
+  }
+
+  function trackAnalytics(eventName, payload, options) {
+    if (!analyticsEnabled()) {
+      return;
+    }
+
+    analyticsQueue.push(buildAnalyticsEnvelope(eventName, payload || {}));
+    persistAnalyticsQueue();
+
+    if (options && options.immediate) {
+      flushAnalyticsQueue();
+      return;
+    }
+
+    window.clearTimeout(analyticsFlushTimer);
+    analyticsFlushTimer = window.setTimeout(function () {
+      flushAnalyticsQueue();
+    }, 900);
+  }
+
+  function flushAnalyticsQueue(options) {
+    if (!analyticsEnabled() || !analyticsQueue.length) {
+      return Promise.resolve(false);
+    }
+
+    const batch = analyticsQueue.slice(0, 20);
+    return sendAnalyticsBatch(batch, options).then(function (sent) {
+      if (!sent) {
+        return false;
+      }
+
+      analyticsQueue.splice(0, batch.length);
+      persistAnalyticsQueue();
+
+      if (analyticsQueue.length) {
+        return flushAnalyticsQueue();
+      }
+
+      return true;
+    });
+  }
+
+  function sendAnalyticsBatch(batch, options) {
+    const endpoint = analyticsConfig.collectEndpoint;
+    const transport = analyticsConfig.transport || "json";
+    const payload = JSON.stringify({
+      siteId: analyticsConfig.siteId || "xpti-test",
+      events: batch
+    });
+
+    if (options && options.useBeacon && navigator.sendBeacon) {
+      try {
+        const blob = new Blob([payload], {
+          type: transport === "apps-script" ? "text/plain;charset=utf-8" : "application/json"
+        });
+        return Promise.resolve(navigator.sendBeacon(endpoint, blob));
+      } catch (error) {
+        return Promise.resolve(false);
+      }
+    }
+
+    if (transport === "apps-script") {
+      return fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: payload,
+        keepalive: true,
+        mode: "no-cors"
+      }).then(function () {
+        return true;
+      }).catch(function () {
+        return false;
+      });
+    }
+
+    return fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true,
+      mode: "cors"
+    }).then(function (response) {
+      return response.ok;
+    }).catch(function () {
+      return false;
+    });
+  }
+
+  function buildAnalyticsEnvelope(eventName, payload) {
+    return {
+      id: "evt_" + Math.random().toString(36).slice(2, 10) + "_" + Date.now().toString(36),
+      event: eventName,
+      timestamp: new Date().toISOString(),
+      sessionId: sessionId,
+      page: state.phase,
+      url: window.location.href,
+      payload: payload
+    };
+  }
+
+  function buildCompletionPayload(result) {
+    return {
+      mainType: result.main.id,
+      mainName: result.main.name,
+      mainScore: result.main.score,
+      topThree: result.rankings.slice(0, 3).map(function (item) {
+        return {
+          id: item.id,
+          name: item.name,
+          score: item.score
+        };
+      }),
+      dimensions: result.dimensionScores,
+      matches: result.matches.map(function (item) {
+        return {
+          id: item.id,
+          name: item.name,
+          score: item.score
+        };
+      }),
+      answeredCount: getAnsweredCount(state.answers),
+      answers: state.answers.slice()
+    };
   }
 
   function copyText(text) {
@@ -1166,6 +1474,7 @@
       return;
     }
 
+    const hadResult = Boolean(state.latestResult);
     state = {
       phase: "home",
       currentIndex: 0,
@@ -1176,6 +1485,9 @@
     localStorage.removeItem(STORAGE_KEY);
     render();
     showToast("记录已清空。");
+    trackAnalytics("local_progress_cleared", {
+      hadResult: hadResult
+    }, { immediate: true });
   }
 
   function printDebugScores(result) {

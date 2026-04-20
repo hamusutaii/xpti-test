@@ -98,6 +98,12 @@ body {
   margin-bottom: 18px;
 }
 
+.topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .brand-button,
 .topbar-link,
 .inline-link {
@@ -120,6 +126,7 @@ body {
   color: var(--accent-deep);
   font-size: 13px;
   font-weight: 500;
+  text-decoration: none;
 }
 
 .app-root {
@@ -190,7 +197,7 @@ body {
   max-width: 42rem;
   margin: 14px 0 0;
   font-size: 1rem;
-  line-height: 1.8;
+  line-height: 1.85;
   color: var(--ink-soft);
 }
 
@@ -530,6 +537,10 @@ body {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.summary-card--quote {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(245, 242, 235, 0.92));
+}
+
 .summary-label {
   display: block;
   color: var(--ink-faint);
@@ -604,6 +615,13 @@ body {
   color: var(--accent-deep);
   font-size: 0.86rem;
   font-weight: 600;
+}
+
+.section-intro {
+  margin: -2px 0 12px;
+  color: var(--ink-faint);
+  font-size: 0.9rem;
+  line-height: 1.7;
 }
 
 .secondary-note,
